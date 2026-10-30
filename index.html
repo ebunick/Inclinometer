@@ -110,7 +110,7 @@
   </section>
 
   <p class="note">
-    Pitch = front-to-back tilt (β), Roll = side-to-side tilt (γ), Tilt = total angle of the screen from lying flat, Heading = compass direction (α, may be relative on some phones).
+    Pitch = angle of the phone's long edge from horizontal (+ = top raised), Roll = angle of the short edge from horizontal (+ = right side lowered); each is independent of the other, range ±90°. Tilt = total angle of the screen from lying flat, Heading = compass direction (α, may be relative on some phones).
     Saved values are the average of the last 0.5 s of readings. The log lives only in this tab: copy or download the CSV before closing it.
   </p>
 </div>
@@ -134,15 +134,21 @@
 
   function onOrient(e) {
     if (e.beta == null && e.gamma == null) return;
-    const b = e.beta || 0, g = e.gamma || 0;
-    // Total tilt of the device z-axis from vertical (W3C Z-X'-Y'' order): cos(tilt) = cos(β)·cos(γ)
-    const c = Math.max(-1, Math.min(1, Math.cos(b * DEG) * Math.cos(g * DEG)));
-    const tilt = Math.acos(c) / DEG;
+    const b = (e.beta || 0) * DEG, g = (e.gamma || 0) * DEG;
+    // "Up" (opposite of gravity) expressed in the phone's own axes, from the W3C Z-X'-Y'' Euler angles:
+    //   up = ( -cosβ·sinγ ,  sinβ ,  cosβ·cosγ )
+    // Each axis angle is that axis's elevation above horizontal, so turning the phone about one axis
+    // cannot change the other reading (raw β/γ Euler angles are coupled, which is why they looked wrong).
+    const clamp = v => Math.max(-1, Math.min(1, v));
+    const ux = -Math.cos(b) * Math.sin(g), uy = Math.sin(b), uz = Math.cos(b) * Math.cos(g);
+    const pitchAx = Math.asin(clamp(uy)) / DEG;   // long edge: + = top edge raised
+    const rollAx = Math.asin(clamp(-ux)) / DEG;   // short edge: + = right edge lowered (same sign as before)
+    const tilt = Math.acos(clamp(uz)) / DEG;      // screen from flat
     let heading = null;
     if (typeof e.webkitCompassHeading === 'number') heading = e.webkitCompassHeading;
     else if (e.alpha != null) heading = (360 - e.alpha) % 360;
     const now = performance.now();
-    samples.push({ t: now, tilt, pitch: b, roll: g, heading });
+    samples.push({ t: now, tilt, pitch: pitchAx, roll: rollAx, heading });
     while (samples.length && now - samples[0].t > WINDOW_MS) samples.shift();
     lastEvent = now;
     if (!live) { live = true; setStatus('Live', 'live'); enable(); }
